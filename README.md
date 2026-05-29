@@ -2,6 +2,8 @@
 
 Claude Code 会话全文搜索工具，弥补 `claude -r` 只能按标题搜索的不足。
 
+基于 [Textual](https://textual.textualize.io/) 构建。
+
 ## 功能
 
 - 扫描 `~/.claude/projects/` 下的所有 session，建立全文索引
@@ -90,8 +92,8 @@ Rename-Item claudes.ps1 ccs.ps1
 ## 依赖
 
 - Python 3.11+
-- prompt_toolkit >= 3.0
+- textual
 
 ```bash
-pip install prompt_toolkit
+pip install textual
 ```
