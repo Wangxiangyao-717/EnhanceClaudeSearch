@@ -29,6 +29,7 @@ import re
 import shutil
 import subprocess
 import sys
+import unicodedata
 from datetime import datetime
 
 from prompt_toolkit import Application
@@ -97,6 +98,37 @@ def copy_to_clipboard(text):
 # ---------------------------------------------------------------------------
 # Session discovery
 # ---------------------------------------------------------------------------
+
+def display_width(text):
+    """Terminal display width — CJK characters count as 2, others as 1."""
+    w = 0
+    for ch in text:
+        w += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+    return w
+
+
+def wrap_display(text, width):
+    """Wrap text at given display width, correctly handling CJK characters."""
+    lines = []
+    current = ""
+    current_w = 0
+    for ch in text:
+        ch_w = 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+        if ch == "\n":
+            lines.append(current)
+            current = ""
+            current_w = 0
+        elif current_w + ch_w > width:
+            lines.append(current)
+            current = ch
+            current_w = ch_w
+        else:
+            current += ch
+            current_w += ch_w
+    if current:
+        lines.append(current)
+    return lines if lines else [""]
+
 
 def project_session_dir(project_path=None):
     """Map a filesystem path to the Claude Code session directory name."""
@@ -219,6 +251,24 @@ def load_session_messages(session_dir, uuid):
     return messages
 
 
+def load_session_recap(session_dir, uuid):
+    """Load the most recent recap (away_summary) from a session JSONL file."""
+    jsonl_path = os.path.join(session_dir, uuid + ".jsonl")
+    try:
+        with open(jsonl_path, "r", encoding="utf-8") as f:
+            recap = None
+            for line in f:
+                try:
+                    d = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if d.get("type") == "system" and d.get("subtype") == "away_summary":
+                    recap = d.get("content", "")
+            return recap
+    except Exception:
+        return None
+
+
 def find_match_snippet(search_text, query, context_chars=10):
     """Extract text around the first matching term for context display."""
     if not query or not query.strip():
@@ -301,6 +351,7 @@ class SessionPicker:
         self.focus_index = 2  # 0=cmd, 1=suffix, 2=search
         self.detail_mode = False
         self.detail_messages = []
+        self.detail_recap = None
         self.detail_idx = 0
         self.detail_uuid = None
 
@@ -375,6 +426,7 @@ class SessionPicker:
             if not self.detail_mode and self.filtered and self.selected_idx < len(self.filtered):
                 uuid = self.filtered[self.selected_idx]["uuid"]
                 self.detail_messages = load_session_messages(self.session_dir, uuid)
+                self.detail_recap = load_session_recap(self.session_dir, uuid)
                 self.detail_idx = 0
                 self.detail_uuid = uuid
                 self.detail_mode = True
@@ -614,16 +666,14 @@ class SessionPicker:
         self.app.layout = Layout(HSplit(rows))
 
     def _refresh_detail(self):
-        """Render the detail view showing all user messages in a session."""
+        """Render the detail view showing recap (fixed) and user messages."""
         info = next((s for s in self.sessions if s["uuid"] == self.detail_uuid), None)
         date_str = info["date_str"] if info else "??-?? ??:??"
         uuid_short = (self.detail_uuid or "")[:8]
 
         term_height = shutil.get_terminal_size().lines
         term_width = shutil.get_terminal_size().columns
-        fixed_rows = 3  # top bar + separator line + status bar
-        visible_rows = max(1, term_height - fixed_rows)
-        max_msg_width = max(20, term_width - 6)  # indent + number prefix
+        max_msg_width = max(20, term_width - 6)
 
         msg_count = len(self.detail_messages)
         if self.detail_idx < 0:
@@ -633,15 +683,31 @@ class SessionPicker:
         if not msg_count:
             self.detail_idx = 0
 
-        # Virtual scroll for messages
-        start = 0
-        if msg_count > visible_rows:
-            start = max(0, self.detail_idx - visible_rows // 2)
-            start = min(start, msg_count - visible_rows)
-
         rows = []
 
-        # Top bar
+        # --- Recap section (fixed at top) ---
+        recap_lines = 0
+        recap_text = self.detail_recap or ""
+        if recap_text.strip():
+            # Wrap recap text to terminal width, show up to 5 lines
+            max_recap_width = max(20, term_width - 4)
+            wrapped = wrap_display(recap_text.strip(), width=max_recap_width)
+            recap_display = wrapped[:5]
+            if len(wrapped) > 5:
+                recap_display[-1] = recap_display[-1][:max_recap_width - 3] + "..."
+
+            for i, line in enumerate(recap_display):
+                prefix = "  Recap: " if i == 0 else "         "
+                rows.append(Window(
+                    content=FormattedTextControl([
+                        ("class:input-label", f"{prefix}{line}"),
+                    ]),
+                    height=1,
+                    style="class:input-row",
+                ))
+            recap_lines = len(recap_display)
+
+        # --- Session info bar ---
         top_text = f"  Session: {uuid_short}    {date_str}    {msg_count} messages"
         rows.append(Window(
             content=FormattedTextControl([
@@ -651,7 +717,7 @@ class SessionPicker:
             style="class:input-row",
         ))
 
-        # Separator
+        # --- Separator ---
         rows.append(Window(
             content=FormattedTextControl([
                 ("class:header", f"  {'─' * (term_width - 4)}"),
@@ -659,7 +725,15 @@ class SessionPicker:
             height=1,
         ))
 
-        # Message list
+        # --- Message list with scroll ---
+        fixed_rows = 2 + recap_lines  # session bar(1) + separator(1) + status(1) + recap
+        visible_rows = max(1, term_height - fixed_rows - 1)  # -1 for status bar
+
+        start = 0
+        if msg_count > visible_rows:
+            start = max(0, self.detail_idx - visible_rows // 2)
+            start = min(start, msg_count - visible_rows)
+
         lines = []
         if not self.detail_messages:
             lines.append(("class:no-results", "  No user messages found\n"))
@@ -679,7 +753,7 @@ class SessionPicker:
             wrap_lines=False,
         ))
 
-        # Status bar
+        # --- Status bar ---
         status_text = (
             f"  {self.detail_idx + 1}/{msg_count}"
             f"    ← 返回主界面    ↑↓ 选择    Esc 返回"
