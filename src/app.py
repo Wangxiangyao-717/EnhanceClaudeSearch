@@ -92,7 +92,7 @@ class SearchScreen(Screen):
         elif key == "enter":
             self._execute_selected()
             event.stop()
-        elif key == "ctrl+space":
+        elif key == "ctrl+y":
             self.copy_selected_uuid()
             event.stop()
         elif key == "right":
@@ -182,7 +182,7 @@ class SearchScreen(Screen):
             parts = [p for p in [cmd, uuid[:8], arg] if p]
             preview = f"  -> {' '.join(parts)}"
         self.query_one("#status-bar").update(
-            f"{n}/{total}{preview}   ↑↓浏览  Enter执行  Ctrl+Space复制  →详情"
+            f"{n}/{total}{preview}   ↑↓浏览  Enter执行  Ctrl+Y复制  →详情"
         )
 
     def action_focus_next(self):
