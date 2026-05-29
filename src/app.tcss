@@ -1,44 +1,47 @@
 SearchScreen {
     layout: grid;
     grid-size: 1;
-    grid-rows: auto auto auto 1fr auto;
+    grid-rows: auto auto auto auto 1fr;
 }
 
 SearchScreen > Input {
-    height: auto;
+    height: 1;
     margin: 0 1;
+    border: none;
+    padding: 0 2;
 }
 
 SearchScreen > Input:focus {
     border: solid #00ffcc;
+    height: 1;
 }
 
 SearchScreen > #status-bar {
-    height: auto;
+    height: 1;
     background: #0a0a1a;
-    color: #888888;
+    color: #00d4aa;
     padding: 0 2;
 }
 
 SearchScreen > #results {
     border: none;
+    margin: 0;
 }
 
 DetailScreen {
     layout: grid;
     grid-size: 1;
-    grid-rows: auto auto auto 1fr auto;
+    grid-rows: auto auto auto auto 1fr;
 }
 
 DetailScreen > Static {
-    height: auto;
     margin: 0 1;
 }
 
 DetailScreen > #detail-status {
-    height: auto;
+    height: 1;
     background: #0a0a1a;
-    color: #888888;
+    color: #00d4aa;
     padding: 0 2;
 }
 
@@ -65,15 +68,16 @@ ListView > ListItem.highlighted {
     background: #1a1a2e;
     color: #e0e0e0;
     padding: 0 2;
+    height: auto;
 }
 
 #detail-header {
-    height: auto;
-    color: #666666;
+    color: #888888;
     padding: 0 2;
+    height: 1;
 }
 
 #separator {
-    height: auto;
-    color: #666666;
+    color: #444444;
+    height: 1;
 }
