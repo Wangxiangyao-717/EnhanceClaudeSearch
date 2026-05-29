@@ -6,6 +6,7 @@ import sys
 
 from textual.app import App, Screen
 from textual.widgets import Footer, Input, ListItem, ListView, Static
+from textual.binding import Binding
 
 # Add src to path so utils can be imported
 sys.path.insert(0, os.path.dirname(__file__))
@@ -26,8 +27,9 @@ class SearchScreen(Screen):
     """Main search screen: 3 inputs + session list + status."""
 
     BINDINGS = [
-        ("right", "push_detail", "详情"),
-        ("space", "copy_uuid", "复制UUID"),
+        Binding("right", "push_detail", "详情", show=False),
+        Binding("space", "do_space", " ", show=False),
+        Binding("enter", "do_enter", "执行", show=False),
     ]
 
     def compose(self):
@@ -43,7 +45,6 @@ class SearchScreen(Screen):
         self.query_one("#cmd-input").value = config.get("cmd_prefix", "claude -r")
         self.query_one("#arg-input").value = config.get("cmd_suffix", "")
 
-        # If launched with a query, pre-fill
         if self.app.initial_query:
             search = self.query_one("#search-input")
             search.value = self.app.initial_query
@@ -93,6 +94,14 @@ class SearchScreen(Screen):
 
         self._update_status()
 
+    def _selected_uuid(self):
+        """Return UUID of the highlighted ListView item, or None."""
+        lv = self.query_one("#results")
+        if lv.index is not None and lv.index < len(lv.children):
+            raw_id = lv.children[lv.index].id or ""
+            return raw_id[2:] if raw_id.startswith("s-") else raw_id
+        return None
+
     def _update_status(self):
         lv = self.query_one("#results")
         total = len(self.app.sessions)
@@ -102,60 +111,60 @@ class SearchScreen(Screen):
         arg = self.query_one("#arg-input").value
 
         preview = ""
-        if lv.index is not None and lv.index < len(lv.children):
-            item = lv.children[lv.index]
-            raw_id = item.id or ""
-            uuid = raw_id[2:] if raw_id.startswith("s-") else raw_id
+        uuid = self._selected_uuid()
+        if uuid:
             parts = [p for p in [cmd, uuid[:8], arg] if p]
             preview = f"Run: {' '.join(parts)} | "
 
-        focus_id = self.focused.id if self.focused else "?"
         self.query_one("#status-bar").update(
             f"  {filtered_count}/{total} | {preview}"
             f"Tab 切换    Enter 执行    Space 复制UUID    Esc 退出"
         )
 
+    # --- Actions that respect Input focus ---
+
+    def action_do_space(self):
+        """Space: copy UUID when ListView focused, type space when Input focused."""
+        if isinstance(self.focused, Input):
+            self.focused.insert_text_at_cursor(" ")
+            return
+        uuid = self._selected_uuid()
+        if uuid:
+            copy_to_clipboard(uuid)
+            status = self.query_one("#status-bar")
+            status.update(f"  已复制: {uuid[:8]}...")
+            self.set_timer(2, self._update_status)
+
+    def action_do_enter(self):
+        """Enter: execute command when ListView focused, ignore when Input focused."""
+        if isinstance(self.focused, Input):
+            return
+        uuid = self._selected_uuid()
+        if uuid:
+            save_config(self.app.config)
+            cmd = self.query_one("#cmd-input").value
+            arg = self.query_one("#arg-input").value
+            parts = [p for p in [cmd, uuid, arg] if p]
+            full_cmd = " ".join(parts)
+            save_config(self.app.config)
+            self.app.exit(result=("run", full_cmd))
+
     def action_push_detail(self):
-        lv = self.query_one("#results")
-        if lv.index is not None and lv.index < len(lv.children):
-            raw_id = lv.children[lv.index].id or ""
-            uuid = raw_id[2:] if raw_id.startswith("s-") else raw_id
-            if uuid:
-                save_config(self.app.config)
-                self.app.push_screen(DetailScreen(uuid))
-
-    def action_copy_uuid(self):
-        lv = self.query_one("#results")
-        if lv.index is not None and lv.index < len(lv.children):
-            raw_id = lv.children[lv.index].id or ""
-            uuid = raw_id[2:] if raw_id.startswith("s-") else raw_id
-            if uuid:
-                copy_to_clipboard(uuid)
-                status = self.query_one("#status-bar")
-                status.update(f"  已复制: {uuid[:8]}...")
-                self.set_timer(2, self._update_status)
-
-    def action_execute(self):
-        lv = self.query_one("#results")
-        if lv.index is not None and lv.index < len(lv.children):
-            raw_id = lv.children[lv.index].id or ""
-            uuid = raw_id[2:] if raw_id.startswith("s-") else raw_id
-            if uuid:
-                save_config(self.app.config)
-                cmd = self.query_one("#cmd-input").value
-                arg = self.query_one("#arg-input").value
-                parts = [p for p in [cmd, uuid, arg] if p]
-                full_cmd = " ".join(parts)
-                save_config(self.app.config)
-                self.app.exit(result=("run", full_cmd))
+        """Right arrow: push detail screen when ListView focused."""
+        if isinstance(self.focused, Input):
+            return
+        uuid = self._selected_uuid()
+        if uuid:
+            save_config(self.app.config)
+            self.app.push_screen(DetailScreen(uuid))
 
 
 class DetailScreen(Screen):
     """Detail view: recap + session info + message list."""
 
     BINDINGS = [
-        ("left", "pop_screen", "返回"),
-        ("escape", "pop_screen", "返回"),
+        Binding("left", "pop_screen", "返回", show=False),
+        Binding("escape", "pop_screen", "返回", show=False),
     ]
 
     def __init__(self, session_uuid):
@@ -181,34 +190,27 @@ class DetailScreen(Screen):
         )
         recap = load_session_recap(self.app.session_dir, self.session_uuid)
 
+        w = self.app.size.width
+
         # Recap section
         recap_box = self.query_one("#recap-box")
         if recap and recap.strip():
-            term_width = self.size.width
-            wrapped = wrap_display(recap.strip(), max(20, term_width - 4))
+            wrapped = wrap_display(recap.strip(), max(20, w - 4))
             recap_display = wrapped[:5]
             if len(wrapped) > 5:
-                recap_display[-1] = (
-                    recap_display[-1][: max(20, term_width - 7)] + "..."
-                )
+                recap_display[-1] = recap_display[-1][: max(20, w - 7)] + "..."
             recap_box.update("\n".join(recap_display))
         else:
             recap_box.display = False
 
-        # Header
         self.query_one("#detail-header").update(
             f"  Session: {uuid_short}    {date_str}    {len(self.messages)} messages"
         )
+        self.query_one("#separator").update(f"  {'─' * (w - 4)}")
 
-        # Separator
-        self.query_one("#separator").update(
-            f"  {'─' * (self.size.width - 4)}"
-        )
-
-        # Messages
         lv = self.query_one("#messages")
         for i, msg in enumerate(self.messages):
-            truncated = msg[: self.size.width - 6]
+            truncated = msg[: w - 6]
             lv.append(ListItem(Static(f"  {i + 1:>3}. {truncated}")))
         if self.messages:
             lv.index = 0
@@ -235,9 +237,6 @@ class ClaudeSessionSearch(App):
 
     CSS_PATH = "app.tcss"
     TITLE = "Claude Session Search"
-
-    BINDINGS = [
-    ]
 
     def __init__(self, sessions, session_dir, config, initial_query=""):
         super().__init__()

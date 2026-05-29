@@ -1,11 +1,11 @@
 SearchScreen {
     layout: grid;
     grid-size: 1;
-    grid-rows: 1 1 1 1fr auto auto;
+    grid-rows: auto auto auto 1fr auto;
 }
 
 SearchScreen > Input {
-    height: 1;
+    height: auto;
     margin: 0 1;
 }
 
@@ -14,7 +14,7 @@ SearchScreen > Input:focus {
 }
 
 SearchScreen > #status-bar {
-    height: 1;
+    height: auto;
     background: #0a0a1a;
     color: #888888;
     padding: 0 2;
@@ -24,16 +24,10 @@ SearchScreen > #results {
     border: none;
 }
 
-SearchScreen Footer {
-    background: #0a0a1a;
-    color: #00d4aa;
-    dock: bottom;
-}
-
 DetailScreen {
     layout: grid;
     grid-size: 1;
-    grid-rows: auto auto 1fr auto;
+    grid-rows: auto auto auto 1fr auto;
 }
 
 DetailScreen > Static {
@@ -42,7 +36,7 @@ DetailScreen > Static {
 }
 
 DetailScreen > #detail-status {
-    height: 1;
+    height: auto;
     background: #0a0a1a;
     color: #888888;
     padding: 0 2;
@@ -73,17 +67,13 @@ ListView > ListItem.highlighted {
     padding: 0 2;
 }
 
-#recap-box > Static {
-    height: auto;
-}
-
 #detail-header {
-    height: 1;
+    height: auto;
     color: #666666;
     padding: 0 2;
 }
 
 #separator {
-    height: 1;
+    height: auto;
     color: #666666;
 }
