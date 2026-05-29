@@ -3,19 +3,19 @@ SearchScreen {
 }
 
 SearchScreen > Input {
-    dock: top;
     height: 1;
     margin: 0 1;
-    border: none;
     padding: 0 2;
+    background: #1a1a2e;
+    color: #e0e0e0;
 }
 
 SearchScreen > Input:focus {
-    border: solid #00ffcc;
+    background: #2a2a4e;
+    color: #ffffff;
 }
 
 SearchScreen > #status-bar {
-    dock: bottom;
     height: 1;
     background: #0a0a1a;
     color: #00d4aa;
@@ -23,6 +23,7 @@ SearchScreen > #status-bar {
 }
 
 SearchScreen > #results {
+    height: 1fr;
     border: none;
     margin: 0;
 }
@@ -32,7 +33,6 @@ DetailScreen {
 }
 
 DetailScreen > #detail-status {
-    dock: bottom;
     height: 1;
     background: #0a0a1a;
     color: #00d4aa;
@@ -40,6 +40,7 @@ DetailScreen > #detail-status {
 }
 
 DetailScreen > #messages {
+    height: 1fr;
     border: none;
 }
 
@@ -52,14 +53,13 @@ ListView > ListItem {
     padding: 0 2;
 }
 
-ListView > ListItem.highlighted {
+ListView > ListItem.-highlight {
     background: #00d4aa;
     color: #0a0a0a;
     text-style: bold;
 }
 
 #recap-box {
-    dock: top;
     background: #1a1a2e;
     color: #e0e0e0;
     padding: 0 2;
@@ -67,14 +67,12 @@ ListView > ListItem.highlighted {
 }
 
 #detail-header {
-    dock: top;
     color: #888888;
     padding: 0 2;
     height: 1;
 }
 
 #separator {
-    dock: top;
     color: #444444;
     height: 1;
 }

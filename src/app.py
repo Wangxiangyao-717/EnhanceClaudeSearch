@@ -16,32 +16,49 @@ from utils import (
 )
 
 
+class SearchInput(Input):
+    """Single-line input that doesn't use arrow keys for cursor movement."""
+
+    def action_cursor_left(self, select: bool = False) -> None:
+        pass
+
+    def action_cursor_right(self, select: bool = False) -> None:
+        pass
+
+
 class SearchScreen(Screen):
     BINDINGS = [
         Binding("escape", "quit", "退出"),
-        Binding("tab", "focus_next_input", "切换"),
+        Binding("tab", "focus_next", "切换", show=False),
+        Binding("shift+tab", "focus_previous", "切换", show=False),
+        Binding("up", "results_up", "上移", show=False),
+        Binding("down", "results_down", "下移", show=False),
+        Binding("right", "open_detail", "详情", show=False),
+        Binding("space", "copy_uuid", "复制UUID", show=False),
     ]
 
     def compose(self):
-        yield Input(placeholder="Cmd", id="cmd-input")
-        yield Input(placeholder="Arg", id="arg-input")
-        yield Input(placeholder="Search", id="search-input")
-        yield Static("", id="status-bar")
+        yield SearchInput(placeholder="Cmd", id="cmd-input", compact=True)
+        yield SearchInput(placeholder="Arg", id="arg-input", compact=True)
+        yield SearchInput(placeholder="Search", id="search-input", compact=True)
         yield ListView(id="results")
+        yield Static("", id="status-bar")
         yield Footer()
 
-    def on_mount(self):
+    async def on_mount(self):
         config = self.app.config
         self._init = True
+        self._filter_generation = 0
         self.query_one("#cmd-input").value = config.get("cmd_prefix", "claude -r")
         self.query_one("#arg-input").value = config.get("cmd_suffix", "")
         if self.app.initial_query:
             self.query_one("#search-input").value = self.app.initial_query
         self._init = False
-        self._do_filter(self.query_one("#search-input").value)
+        await self._do_filter(self.query_one("#search-input").value)
+        self.query_one("#search-input").focus()
         self._update_status()
 
-    def on_input_changed(self, event: Input.Changed):
+    async def on_input_changed(self, event: Input.Changed):
         if getattr(self, "_init", False):
             return
         if event.input.id == "cmd-input":
@@ -49,95 +66,65 @@ class SearchScreen(Screen):
         elif event.input.id == "arg-input":
             self.app.config["cmd_suffix"] = event.value
         elif event.input.id == "search-input":
-            self._do_filter(event.value)
+            await self._do_filter(event.value)
         self._update_status()
 
-    def on_key(self, event):
-        """Handle navigation keys. Return False to pass to focused widget."""
-        key = event.key
+    def _focusables(self):
+        return [self.query_one(f"#{i}") for i in ["cmd-input", "arg-input", "search-input"]]
 
-        # --- Global keys ---
-        if key == "escape":
-            self.app.exit()
-            return
-
-        if key == "tab":
-            self._cycle_input_focus()
-            return
-
-        # --- When Input is focused: pass most keys through ---
-        if isinstance(self.focused, Input):
-            if key == "enter":
-                # Jump from Input to ListView
-                self.query_one("#results").focus()
-                return
-            # All other keys (arrows, printable chars, backspace, etc.) pass to Input
-            return
-
-        # --- When ListView (or other) is focused ---
-        lv = self.query_one("#results")
-
-        if key == "right":
-            uuid = self._selected_uuid()
-            if uuid:
-                save_config(self.app.config)
-                self.app.push_screen(DetailScreen(uuid))
-
-        elif key == "space":
-            uuid = self._selected_uuid()
-            if uuid:
-                copy_to_clipboard(uuid)
-                self.query_one("#status-bar").update(f"Copied: {uuid[:8]}...")
-                self.set_timer(2, self._update_status)
-
-        elif key == "up":
-            if (lv.index or 0) == 0 and lv.children:
-                self.query_one("#search-input").focus()
-            elif lv.children:
-                lv.index = (lv.index or 0) - 1
-                self._update_status()
-
-        elif key == "down":
-            if lv.children and (lv.index or 0) < len(lv.children) - 1:
-                lv.index = (lv.index or 0) + 1
-                self._update_status()
-
-        elif key == "enter":
-            uuid = self._selected_uuid()
-            if uuid:
-                save_config(self.app.config)
-                cmd = self.query_one("#cmd-input").value
-                arg = self.query_one("#arg-input").value
-                parts = [p for p in [cmd, uuid, arg] if p]
-                self.app.exit(result=("run", " ".join(parts)))
-
-        # Prevent default handling
-        event.stop()
-
-    def _cycle_input_focus(self):
-        inputs = [self.query_one(f"#{i}") for i in ["cmd-input", "arg-input", "search-input"]]
+    def _cycle_focus(self, step):
+        inputs = self._focusables()
         focused = self.focused
         try:
             idx = inputs.index(focused)
-            nxt = inputs[(idx + 1) % len(inputs)]
+            nxt = inputs[(idx + step) % len(inputs)]
         except ValueError:
             nxt = inputs[0]
         nxt.focus()
 
-    def _do_filter(self, query):
+    def on_input_submitted(self, event: Input.Submitted):
+        event.stop()
+        self.query_one("#results").focus()
+
+    def on_list_view_selected(self, event: ListView.Selected):
+        event.stop()
+        uuid = self._selected_uuid()
+        if uuid:
+            save_config(self.app.config)
+            cmd = self.query_one("#cmd-input").value
+            arg = self.query_one("#arg-input").value
+            parts = [p for p in [cmd, uuid, arg] if p]
+            self.app.exit(result=("run", " ".join(parts)))
+
+    def on_list_view_highlighted(self, event: ListView.Highlighted):
+        if event.list_view.id == "results":
+            self._update_status()
+
+    async def _do_filter(self, query):
+        self._filter_generation += 1
+        generation = self._filter_generation
         filtered = filter_sessions_with_snippets(self.app.sessions, query)
         lv = self.query_one("#results")
         old_uuid = None
         if lv.index is not None and lv.index < len(lv.children):
             old_uuid = lv.children[lv.index].id
 
-        lv.clear()
+        await lv.clear()
+        if generation != self._filter_generation:
+            return
+
+        items = []
         for s in filtered:
             snippet = s.get("match_snippet", "")
             line = f"{s['date_str']}  {s['uuid'][:8]}  {s['first_prompt'][:60]}"
             if snippet:
                 line += f"  {snippet}"
-            lv.append(ListItem(Static(line), id=f"s-{s['uuid']}"))
+            items.append(ListItem(Static(line), id=f"s-{s['uuid']}"))
+
+        if items:
+            await lv.extend(items)
+        if generation != self._filter_generation:
+            return
 
         if old_uuid:
             try:
@@ -171,8 +158,45 @@ class SearchScreen(Screen):
         hint = "Enter:编辑" if isinstance(focused, Input) else "Enter:执行"
         self.query_one("#status-bar").update(f"{n}/{total}{preview}   {hint}  Space  →详情")
 
-    def action_focus_next_input(self):
-        self._cycle_input_focus()
+    def action_focus_next(self):
+        self._cycle_focus(1)
+
+    def action_focus_previous(self):
+        self._cycle_focus(-1)
+
+    def _move_results(self, step):
+        lv = self.query_one("#results")
+        if not lv.children:
+            return
+        if self.focused is not lv:
+            lv.focus()
+        if step < 0:
+            lv.action_cursor_up()
+        else:
+            lv.action_cursor_down()
+
+    def action_results_up(self):
+        self._move_results(-1)
+
+    def action_results_down(self):
+        self._move_results(1)
+
+    def action_open_detail(self):
+        if isinstance(self.focused, Input):
+            return
+        uuid = self._selected_uuid()
+        if uuid:
+            save_config(self.app.config)
+            self.app.push_screen(DetailScreen(uuid))
+
+    def action_copy_uuid(self):
+        if isinstance(self.focused, Input):
+            return
+        uuid = self._selected_uuid()
+        if uuid:
+            copy_to_clipboard(uuid)
+            self.query_one("#status-bar").update(f"Copied: {uuid[:8]}...")
+            self.set_timer(2, self._update_status)
 
     def action_quit(self):
         self.app.exit()
@@ -180,6 +204,7 @@ class SearchScreen(Screen):
 
 class DetailScreen(Screen):
     BINDINGS = [
+        Binding("left", "pop_screen", "返回", show=False),
         Binding("escape", "pop_screen", "返回"),
     ]
 
@@ -224,22 +249,9 @@ class DetailScreen(Screen):
         lv.focus()
         self._update_detail_status()
 
-    def on_key(self, event):
-        key = event.key
-        if key == "escape" or key == "left":
-            self.app.pop_screen()
-        elif key == "up":
-            lv = self.query_one("#messages")
-            if lv.children and (lv.index or 0) > 0:
-                lv.index = (lv.index or 0) - 1
-                self._update_detail_status()
-            event.stop()
-        elif key == "down":
-            lv = self.query_one("#messages")
-            if lv.children and (lv.index or 0) < len(lv.children) - 1:
-                lv.index = (lv.index or 0) + 1
-                self._update_detail_status()
-            event.stop()
+    def on_list_view_highlighted(self, event: ListView.Highlighted):
+        if event.list_view.id == "messages":
+            self._update_detail_status()
 
     def _update_detail_status(self):
         lv = self.query_one("#messages")
