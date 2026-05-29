@@ -23,73 +23,39 @@ from utils import (
 
 
 class SearchScreen(Screen):
-    """Main search screen: 3 inputs + session list + status."""
-
     BINDINGS = [
-        Binding("right", "push_detail", "详情"),
-        Binding("space", "do_space", "复制UUID"),
+        Binding("right", "push_detail", "详情", show=False),
+        Binding("space", "do_space", " ", show=False),
         Binding("escape", "quit", "退出"),
         Binding("tab", "focus_next_input", "切换输入框"),
+        Binding("up", "cursor_up", "", show=False),
+        Binding("down", "cursor_down", "", show=False),
     ]
 
     def compose(self):
-        yield Input(placeholder="命令前缀", id="cmd-input")
-        yield Input(placeholder="附加参数", id="arg-input")
-        yield Input(placeholder="搜索关键词", id="search-input")
+        yield Input(placeholder="Cmd", id="cmd-input")
+        yield Input(placeholder="Arg", id="arg-input")
+        yield Input(placeholder="Search", id="search-input")
         yield Static("", id="status-bar")
         yield ListView(id="results")
         yield Footer()
 
-    def _input_ids(self):
-        return ["cmd-input", "arg-input", "search-input"]
-
-    def action_focus_next_input(self):
-        """Tab: cycle focus through the 3 Inputs only."""
-        inputs = [self.query_one(f"#{i}") for i in self._input_ids()]
-        focused = self.focused
-        try:
-            idx = inputs.index(focused)
-            nxt = inputs[(idx + 1) % len(inputs)]
-        except ValueError:
-            nxt = inputs[0]
-        nxt.focus()
-
-    def on_list_view_selected(self, event: ListView.Selected):
-        """Enter on ListView: execute command."""
-        uuid = self._selected_uuid()
-        if uuid:
-            save_config(self.app.config)
-            cmd = self.query_one("#cmd-input").value
-            arg = self.query_one("#arg-input").value
-            parts = [p for p in [cmd, uuid, arg] if p]
-            self.app.exit(result=("run", " ".join(parts)))
-
-    def action_do_space(self):
-        if isinstance(self.focused, Input):
-            self.focused.insert_text_at_cursor(" ")
-            return
-        uuid = self._selected_uuid()
-        if uuid:
-            copy_to_clipboard(uuid)
-            self.query_one("#status-bar").update(f"已复制 {uuid[:8]}...")
-            self.set_timer(2, self._update_status)
-
     def on_mount(self):
         config = self.app.config
+        self._init = True  # suppress event-driven filter during setup
         self.query_one("#cmd-input").value = config.get("cmd_prefix", "claude -r")
         self.query_one("#arg-input").value = config.get("cmd_suffix", "")
-
         if self.app.initial_query:
-            search = self.query_one("#search-input")
-            search.value = self.app.initial_query
-            self._do_filter(self.app.initial_query)
-        else:
-            self._do_filter("")
+            self.query_one("#search-input").value = self.app.initial_query
+        self._init = False
 
+        self._do_filter(self.query_one("#search-input").value)
         self.query_one("#search-input").focus()
         self._update_status()
 
     def on_input_changed(self, event: Input.Changed):
+        if getattr(self, "_init", False):
+            return
         if event.input.id == "cmd-input":
             self.app.config["cmd_prefix"] = event.value
         elif event.input.id == "arg-input":
@@ -115,6 +81,7 @@ class SearchScreen(Screen):
                 line += f"  {snippet}"
             lv.append(ListItem(Static(line), id=f"s-{s['uuid']}"))
 
+        self._programmatic_select = True
         if old_uuid:
             try:
                 new_idx = next(
@@ -126,6 +93,7 @@ class SearchScreen(Screen):
                 lv.index = 0 if filtered else None
         else:
             lv.index = 0 if filtered else None
+        self._programmatic_select = False
 
         self._update_status()
 
@@ -147,10 +115,24 @@ class SearchScreen(Screen):
         uuid = self._selected_uuid()
         if uuid:
             parts = [p for p in [cmd, uuid[:8], arg] if p]
-            preview = f" → {' '.join(parts)}"
+            preview = f"  -> {' '.join(parts)}"
         self.query_one("#status-bar").update(
-            f"{n}/{total}{preview}   →详情  Enter执行  Space复制  Esc退出"
+            f"{n}/{total}{preview}   -> Enter  Space  Esc"
         )
+
+    # --- Key actions ---
+
+    def action_cursor_up(self):
+        lv = self.query_one("#results")
+        if lv.children and (lv.index or 0) > 0:
+            lv.index = (lv.index or 0) - 1
+            self._update_status()
+
+    def action_cursor_down(self):
+        lv = self.query_one("#results")
+        if lv.children and (lv.index or 0) < len(lv.children) - 1:
+            lv.index = (lv.index or 0) + 1
+            self._update_status()
 
     def action_do_space(self):
         if isinstance(self.focused, Input):
@@ -159,27 +141,51 @@ class SearchScreen(Screen):
         uuid = self._selected_uuid()
         if uuid:
             copy_to_clipboard(uuid)
-            self.query_one("#status-bar").update(f"已复制 {uuid[:8]}...")
+            self.query_one("#status-bar").update(f"Copied: {uuid[:8]}...")
             self.set_timer(2, self._update_status)
 
-    def action_push_detail(self):
-        if isinstance(self.focused, Input):
+    def on_list_view_selected(self, event: ListView.Selected):
+        """Enter on ListView: execute the selected session."""
+        if getattr(self, "_programmatic_select", False):
             return
+        event.stop()
+        uuid = self._selected_uuid()
+        if uuid:
+            save_config(self.app.config)
+            cmd = self.query_one("#cmd-input").value
+            arg = self.query_one("#arg-input").value
+            parts = [p for p in [cmd, uuid, arg] if p]
+            self.app.exit(result=("run", " ".join(parts)))
+
+    def action_push_detail(self):
         uuid = self._selected_uuid()
         if uuid:
             save_config(self.app.config)
             self.app.push_screen(DetailScreen(uuid))
+
+    def _input_ids(self):
+        return ["cmd-input", "arg-input", "search-input"]
+
+    def action_focus_next_input(self):
+        inputs = [self.query_one(f"#{i}") for i in self._input_ids()]
+        focused = self.focused
+        try:
+            idx = inputs.index(focused)
+            nxt = inputs[(idx + 1) % len(inputs)]
+        except ValueError:
+            nxt = inputs[0]
+        nxt.focus()
 
     def action_quit(self):
         self.app.exit()
 
 
 class DetailScreen(Screen):
-    """Detail view: recap + session info + message list."""
-
     BINDINGS = [
         Binding("left", "pop_screen", "返回"),
-        Binding("escape", "pop_screen", "退出"),
+        Binding("escape", "pop_screen", "返回"),
+        Binding("up", "cursor_up", "", show=False),
+        Binding("down", "cursor_down", "", show=False),
     ]
 
     def __init__(self, session_uuid):
@@ -219,7 +225,7 @@ class DetailScreen(Screen):
             recap_box.display = False
 
         self.query_one("#detail-header").update(
-            f"Session: {uuid_short}  {date_str}  {len(self.messages)} messages"
+            f"Session: {uuid_short}  {date_str}  {len(self.messages)} msgs"
         )
         self.query_one("#separator").update("─" * (w - 2))
 
@@ -229,11 +235,19 @@ class DetailScreen(Screen):
             lv.append(ListItem(Static(f"{i + 1:>3}. {truncated}")))
         if self.messages:
             lv.index = 0
-
         self._update_detail_status()
 
-    def on_list_view_highlighted(self, event: ListView.Highlighted):
-        self._update_detail_status()
+    def action_cursor_up(self):
+        lv = self.query_one("#messages")
+        if lv.children and (lv.index or 0) > 0:
+            lv.index = (lv.index or 0) - 1
+            self._update_detail_status()
+
+    def action_cursor_down(self):
+        lv = self.query_one("#messages")
+        if lv.children and (lv.index or 0) < len(lv.children) - 1:
+            lv.index = (lv.index or 0) + 1
+            self._update_detail_status()
 
     def _update_detail_status(self):
         lv = self.query_one("#messages")
