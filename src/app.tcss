@@ -2,15 +2,27 @@ SearchScreen {
     layout: vertical;
 }
 
-SearchScreen > Input {
+.input-row {
+    layout: horizontal;
     height: 1;
+    margin: 0 1;
+}
+
+.field-label {
+    width: 8;
+    color: #00d4aa;
+    content-align: left middle;
+}
+
+.field-input {
+    width: 1fr;
     margin: 0 1;
     padding: 0 2;
     background: #1a1a2e;
     color: #e0e0e0;
 }
 
-SearchScreen > Input:focus {
+.field-input:focus {
     background: #2a2a4e;
     color: #ffffff;
 }

@@ -5,6 +5,7 @@ import subprocess
 import sys
 
 from textual.app import App, Screen
+from textual.containers import Horizontal
 from textual.widgets import Footer, Input, ListItem, ListView, Static
 from textual.binding import Binding
 
@@ -24,9 +25,21 @@ class SearchScreen(Screen):
     ]
 
     def compose(self):
-        yield Input(placeholder="Cmd", id="cmd-input", compact=True, select_on_focus=False)
-        yield Input(placeholder="Arg", id="arg-input", compact=True, select_on_focus=False)
-        yield Input(placeholder="Search", id="search-input", compact=True, select_on_focus=False)
+        yield Horizontal(
+            Static("Cmd:", classes="field-label"),
+            Input(placeholder="", id="cmd-input", compact=True, select_on_focus=False, classes="field-input"),
+            classes="input-row",
+        )
+        yield Horizontal(
+            Static("Arg:", classes="field-label"),
+            Input(placeholder="", id="arg-input", compact=True, select_on_focus=False, classes="field-input"),
+            classes="input-row",
+        )
+        yield Horizontal(
+            Static("Search:", classes="field-label"),
+            Input(placeholder="", id="search-input", compact=True, select_on_focus=False, classes="field-input"),
+            classes="input-row",
+        )
         yield ListView(id="results")
         yield Static("", id="status-bar")
         yield Footer()
