@@ -16,14 +16,21 @@ from utils import (
 )
 
 
-class SearchInput(Input):
-    """Single-line input that doesn't use arrow keys for cursor movement."""
+class ResultsListView(ListView):
+    BINDINGS = ListView.BINDINGS + [
+        Binding("right", "open_detail", "详情", show=False),
+        Binding("space", "copy_uuid", "复制UUID", show=False),
+    ]
 
-    def action_cursor_left(self, select: bool = False) -> None:
-        pass
+    def action_open_detail(self):
+        handler = getattr(self.screen, "open_selected_detail", None)
+        if handler is not None:
+            handler()
 
-    def action_cursor_right(self, select: bool = False) -> None:
-        pass
+    def action_copy_uuid(self):
+        handler = getattr(self.screen, "copy_selected_uuid", None)
+        if handler is not None:
+            handler()
 
 
 class SearchScreen(Screen):
@@ -31,17 +38,13 @@ class SearchScreen(Screen):
         Binding("escape", "quit", "退出"),
         Binding("tab", "focus_next", "切换", show=False),
         Binding("shift+tab", "focus_previous", "切换", show=False),
-        Binding("up", "results_up", "上移", show=False),
-        Binding("down", "results_down", "下移", show=False),
-        Binding("right", "open_detail", "详情", show=False),
-        Binding("space", "copy_uuid", "复制UUID", show=False),
     ]
 
     def compose(self):
-        yield SearchInput(placeholder="Cmd", id="cmd-input", compact=True)
-        yield SearchInput(placeholder="Arg", id="arg-input", compact=True)
-        yield SearchInput(placeholder="Search", id="search-input", compact=True)
-        yield ListView(id="results")
+        yield Input(placeholder="Cmd", id="cmd-input", compact=True, select_on_focus=False)
+        yield Input(placeholder="Arg", id="arg-input", compact=True, select_on_focus=False)
+        yield Input(placeholder="Search", id="search-input", compact=True, select_on_focus=False)
+        yield ResultsListView(id="results")
         yield Static("", id="status-bar")
         yield Footer()
 
@@ -164,34 +167,13 @@ class SearchScreen(Screen):
     def action_focus_previous(self):
         self._cycle_focus(-1)
 
-    def _move_results(self, step):
-        lv = self.query_one("#results")
-        if not lv.children:
-            return
-        if self.focused is not lv:
-            lv.focus()
-        if step < 0:
-            lv.action_cursor_up()
-        else:
-            lv.action_cursor_down()
-
-    def action_results_up(self):
-        self._move_results(-1)
-
-    def action_results_down(self):
-        self._move_results(1)
-
-    def action_open_detail(self):
-        if isinstance(self.focused, Input):
-            return
+    def open_selected_detail(self):
         uuid = self._selected_uuid()
         if uuid:
             save_config(self.app.config)
             self.app.push_screen(DetailScreen(uuid))
 
-    def action_copy_uuid(self):
-        if isinstance(self.focused, Input):
-            return
+    def copy_selected_uuid(self):
         uuid = self._selected_uuid()
         if uuid:
             copy_to_clipboard(uuid)
