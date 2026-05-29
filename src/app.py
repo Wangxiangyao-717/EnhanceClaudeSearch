@@ -16,11 +16,30 @@ from utils import (
 )
 
 
+class SearchInput(Input):
+    BINDINGS = Input.BINDINGS + [
+        Binding("down", "focus_results", "浏览结果", show=False),
+    ]
+
+    def action_focus_results(self):
+        handler = getattr(self.screen, "focus_results", None)
+        if handler is not None:
+            handler()
+
+
 class ResultsListView(ListView):
     BINDINGS = ListView.BINDINGS + [
         Binding("right", "open_detail", "详情", show=False),
         Binding("space", "copy_uuid", "复制UUID", show=False),
     ]
+
+    def action_cursor_up(self):
+        if self.index in (None, 0):
+            handler = getattr(self.screen, "focus_search_input", None)
+            if handler is not None:
+                handler()
+            return
+        super().action_cursor_up()
 
     def action_open_detail(self):
         handler = getattr(self.screen, "open_selected_detail", None)
@@ -41,9 +60,9 @@ class SearchScreen(Screen):
     ]
 
     def compose(self):
-        yield Input(placeholder="Cmd", id="cmd-input", compact=True, select_on_focus=False)
-        yield Input(placeholder="Arg", id="arg-input", compact=True, select_on_focus=False)
-        yield Input(placeholder="Search", id="search-input", compact=True, select_on_focus=False)
+        yield SearchInput(placeholder="Cmd", id="cmd-input", compact=True, select_on_focus=False)
+        yield SearchInput(placeholder="Arg", id="arg-input", compact=True, select_on_focus=False)
+        yield SearchInput(placeholder="Search", id="search-input", compact=True, select_on_focus=False)
         yield ResultsListView(id="results")
         yield Static("", id="status-bar")
         yield Footer()
@@ -87,7 +106,7 @@ class SearchScreen(Screen):
 
     def on_input_submitted(self, event: Input.Submitted):
         event.stop()
-        self.query_one("#results").focus()
+        self.focus_results()
 
     def on_list_view_selected(self, event: ListView.Selected):
         event.stop()
@@ -166,6 +185,12 @@ class SearchScreen(Screen):
 
     def action_focus_previous(self):
         self._cycle_focus(-1)
+
+    def focus_results(self):
+        self.query_one("#results").focus()
+
+    def focus_search_input(self):
+        self.query_one("#search-input").focus()
 
     def open_selected_detail(self):
         uuid = self._selected_uuid()
