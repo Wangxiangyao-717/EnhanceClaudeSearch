@@ -16,42 +16,6 @@ from utils import (
 )
 
 
-class SearchInput(Input):
-    BINDINGS = Input.BINDINGS + [
-        Binding("down", "focus_results", "浏览结果", show=False),
-    ]
-
-    def action_focus_results(self):
-        handler = getattr(self.screen, "focus_results", None)
-        if handler is not None:
-            handler()
-
-
-class ResultsListView(ListView):
-    BINDINGS = ListView.BINDINGS + [
-        Binding("right", "open_detail", "详情", show=False),
-        Binding("space", "copy_uuid", "复制UUID", show=False),
-    ]
-
-    def action_cursor_up(self):
-        if self.index in (None, 0):
-            handler = getattr(self.screen, "focus_search_input", None)
-            if handler is not None:
-                handler()
-            return
-        super().action_cursor_up()
-
-    def action_open_detail(self):
-        handler = getattr(self.screen, "open_selected_detail", None)
-        if handler is not None:
-            handler()
-
-    def action_copy_uuid(self):
-        handler = getattr(self.screen, "copy_selected_uuid", None)
-        if handler is not None:
-            handler()
-
-
 class SearchScreen(Screen):
     BINDINGS = [
         Binding("escape", "quit", "退出"),
@@ -60,10 +24,10 @@ class SearchScreen(Screen):
     ]
 
     def compose(self):
-        yield SearchInput(placeholder="Cmd", id="cmd-input", compact=True, select_on_focus=False)
-        yield SearchInput(placeholder="Arg", id="arg-input", compact=True, select_on_focus=False)
-        yield SearchInput(placeholder="Search", id="search-input", compact=True, select_on_focus=False)
-        yield ResultsListView(id="results")
+        yield Input(placeholder="Cmd", id="cmd-input", compact=True, select_on_focus=False)
+        yield Input(placeholder="Arg", id="arg-input", compact=True, select_on_focus=False)
+        yield Input(placeholder="Search", id="search-input", compact=True, select_on_focus=False)
+        yield ListView(id="results")
         yield Static("", id="status-bar")
         yield Footer()
 
@@ -104,19 +68,27 @@ class SearchScreen(Screen):
             nxt = inputs[0]
         nxt.focus()
 
-    def on_input_submitted(self, event: Input.Submitted):
-        event.stop()
-        self.focus_results()
+    def on_key(self, event):
+        key = event.key
+        if key == "down":
+            self._move_selection(1)
+            event.stop()
+        elif key == "up":
+            self._move_selection(-1)
+            event.stop()
+        elif key == "enter":
+            self._execute_selected()
+            event.stop()
+        elif key == "space":
+            self.copy_selected_uuid()
+            event.stop()
+        elif key == "right":
+            self.open_selected_detail()
+            event.stop()
 
     def on_list_view_selected(self, event: ListView.Selected):
         event.stop()
-        uuid = self._selected_uuid()
-        if uuid:
-            save_config(self.app.config)
-            cmd = self.query_one("#cmd-input").value
-            arg = self.query_one("#arg-input").value
-            parts = [p for p in [cmd, uuid, arg] if p]
-            self.app.exit(result=("run", " ".join(parts)))
+        self._execute_selected()
 
     def on_list_view_highlighted(self, event: ListView.Highlighted):
         if event.list_view.id == "results":
@@ -165,6 +137,24 @@ class SearchScreen(Screen):
             return raw_id[2:] if raw_id.startswith("s-") else raw_id
         return None
 
+    def _move_selection(self, step):
+        lv = self.query_one("#results")
+        count = len(lv.children)
+        if count == 0:
+            return
+        current = 0 if lv.index is None else lv.index
+        lv.index = max(0, min(count - 1, current + step))
+        self._update_status()
+
+    def _execute_selected(self):
+        uuid = self._selected_uuid()
+        if uuid:
+            save_config(self.app.config)
+            cmd = self.query_one("#cmd-input").value
+            arg = self.query_one("#arg-input").value
+            parts = [p for p in [cmd, uuid, arg] if p]
+            self.app.exit(result=("run", " ".join(parts)))
+
     def _update_status(self):
         lv = self.query_one("#results")
         total = len(self.app.sessions)
@@ -176,21 +166,15 @@ class SearchScreen(Screen):
         if uuid:
             parts = [p for p in [cmd, uuid[:8], arg] if p]
             preview = f"  -> {' '.join(parts)}"
-        focused = self.focused
-        hint = "Enter:编辑" if isinstance(focused, Input) else "Enter:执行"
-        self.query_one("#status-bar").update(f"{n}/{total}{preview}   {hint}  Space  →详情")
+        self.query_one("#status-bar").update(
+            f"{n}/{total}{preview}   Tab:切换输入  ↑↓:浏览  Enter:执行  Space:复制  →:详情"
+        )
 
     def action_focus_next(self):
         self._cycle_focus(1)
 
     def action_focus_previous(self):
         self._cycle_focus(-1)
-
-    def focus_results(self):
-        self.query_one("#results").focus()
-
-    def focus_search_input(self):
-        self.query_one("#search-input").focus()
 
     def open_selected_detail(self):
         uuid = self._selected_uuid()
