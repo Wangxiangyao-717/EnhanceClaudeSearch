@@ -98,6 +98,8 @@ class SearchScreen(Screen):
         elif key == "right":
             self.open_selected_detail()
             event.stop()
+        elif key == "left":
+            event.stop()
 
     def on_list_view_selected(self, event: ListView.Selected):
         event.stop()
