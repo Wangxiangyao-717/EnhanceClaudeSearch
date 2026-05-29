@@ -28,7 +28,8 @@ class SearchScreen(Screen):
     BINDINGS = [
         Binding("right", "push_detail", "详情"),
         Binding("space", "do_space", "复制UUID"),
-        Binding("enter", "do_enter", "执行命令"),
+        Binding("escape", "quit", "退出"),
+        Binding("tab", "focus_next_input", "切换输入框"),
     ]
 
     def compose(self):
@@ -38,6 +39,40 @@ class SearchScreen(Screen):
         yield Static("", id="status-bar")
         yield ListView(id="results")
         yield Footer()
+
+    def _input_ids(self):
+        return ["cmd-input", "arg-input", "search-input"]
+
+    def action_focus_next_input(self):
+        """Tab: cycle focus through the 3 Inputs only."""
+        inputs = [self.query_one(f"#{i}") for i in self._input_ids()]
+        focused = self.focused
+        try:
+            idx = inputs.index(focused)
+            nxt = inputs[(idx + 1) % len(inputs)]
+        except ValueError:
+            nxt = inputs[0]
+        nxt.focus()
+
+    def on_list_view_selected(self, event: ListView.Selected):
+        """Enter on ListView: execute command."""
+        uuid = self._selected_uuid()
+        if uuid:
+            save_config(self.app.config)
+            cmd = self.query_one("#cmd-input").value
+            arg = self.query_one("#arg-input").value
+            parts = [p for p in [cmd, uuid, arg] if p]
+            self.app.exit(result=("run", " ".join(parts)))
+
+    def action_do_space(self):
+        if isinstance(self.focused, Input):
+            self.focused.insert_text_at_cursor(" ")
+            return
+        uuid = self._selected_uuid()
+        if uuid:
+            copy_to_clipboard(uuid)
+            self.query_one("#status-bar").update(f"已复制 {uuid[:8]}...")
+            self.set_timer(2, self._update_status)
 
     def on_mount(self):
         config = self.app.config
@@ -127,17 +162,6 @@ class SearchScreen(Screen):
             self.query_one("#status-bar").update(f"已复制 {uuid[:8]}...")
             self.set_timer(2, self._update_status)
 
-    def action_do_enter(self):
-        if isinstance(self.focused, Input):
-            return
-        uuid = self._selected_uuid()
-        if uuid:
-            save_config(self.app.config)
-            cmd = self.query_one("#cmd-input").value
-            arg = self.query_one("#arg-input").value
-            parts = [p for p in [cmd, uuid, arg] if p]
-            self.app.exit(result=("run", " ".join(parts)))
-
     def action_push_detail(self):
         if isinstance(self.focused, Input):
             return
@@ -145,6 +169,9 @@ class SearchScreen(Screen):
         if uuid:
             save_config(self.app.config)
             self.app.push_screen(DetailScreen(uuid))
+
+    def action_quit(self):
+        self.app.exit()
 
 
 class DetailScreen(Screen):
