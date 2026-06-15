@@ -125,7 +125,8 @@ class SearchScreen(Screen):
         items = []
         for s in filtered:
             snippet = s.get("match_snippet", "")
-            line = f"{s['date_str']}  {s['uuid'][:8]}  {s['first_prompt'][:60]}"
+            topic = s.get("ai_title") or s["first_prompt"]
+            line = f"{s['date_str']}  {s['uuid'][:8]}  {topic[:60]}"
             if snippet:
                 line += f"  {snippet}"
             items.append(ListItem(Static(line), id=f"s-{s['uuid']}"))
@@ -305,7 +306,8 @@ def main():
         print(f"\n{'DATE':<12} {'UUID':<10} TOPIC")
         print("-" * 80)
         for s in filtered[:20]:
-            print(f"{s['date_str']:<12} {s['uuid'][:8]:<10} {s['first_prompt'][:100]}")
+            topic = s.get("ai_title") or s["first_prompt"]
+            print(f"{s['date_str']:<12} {s['uuid'][:8]:<10} {topic[:100]}")
         print(f"\n{len(filtered)} match(es).\n")
         sys.exit(0)
     app = ClaudeSessionSearch(sessions, session_dir, config, query)

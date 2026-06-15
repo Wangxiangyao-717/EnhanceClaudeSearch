@@ -131,10 +131,11 @@ def project_session_dir(project_path=None):
 # ---------------------------------------------------------------------------
 
 def extract_session_info(jsonl_path):
-    """Extract first user prompt, all searchable text, and mtime."""
+    """Extract first user prompt, ai-title, all searchable text, and mtime."""
     info = {
         "uuid": os.path.basename(jsonl_path).replace(".jsonl", ""),
         "first_prompt": "",
+        "ai_title": "",
         "search_text": "",
         "mtime": os.path.getmtime(jsonl_path),
         "date_str": "",
@@ -152,6 +153,9 @@ def extract_session_info(jsonl_path):
                 try:
                     d = json.loads(line)
                 except json.JSONDecodeError:
+                    continue
+                if d.get("type") == "ai-title":
+                    info["ai_title"] = d.get("aiTitle", "") or ""
                     continue
                 if d.get("type") != "user":
                     continue
@@ -172,6 +176,9 @@ def extract_session_info(jsonl_path):
                         info["first_prompt"] = clean
                         first_found = True
         info["search_text"] = " ".join(all_texts)
+        # Include ai_title in search_text for searchability
+        if info["ai_title"]:
+            info["search_text"] = info["ai_title"] + " " + info["search_text"]
     except Exception:
         pass
 
