@@ -172,7 +172,7 @@ def extract_session_info(jsonl_path):
                 clean = re.sub(r"\s+", " ", clean).strip()
                 if clean:
                     all_texts.append(clean)
-                    if not first_found:
+                    if not first_found and not clean.startswith("Caveat:"):
                         info["first_prompt"] = clean
                         first_found = True
         info["search_text"] = " ".join(all_texts)
