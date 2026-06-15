@@ -161,18 +161,20 @@ def extract_session_info(jsonl_path):
                     continue
                 msg = d.get("message", {})
                 content = msg.get("content", "")
+                raw = ""
                 if isinstance(content, list):
-                    texts = [
-                        b.get("text", "")
-                        for b in content
+                    raw = " ".join(
+                        b.get("text", "") for b in content
                         if isinstance(b, dict) and b.get("type") == "text"
-                    ]
-                    content = " ".join(texts)
+                    )
+                    content = raw
+                else:
+                    raw = content
                 clean = re.sub(r"<[^>]+>", " ", content)
                 clean = re.sub(r"\s+", " ", clean).strip()
                 if clean:
                     all_texts.append(clean)
-                    if not first_found and not clean.startswith("Caveat:"):
+                    if not first_found and "<local-command-caveat>" not in raw:
                         info["first_prompt"] = clean
                         first_found = True
         info["search_text"] = " ".join(all_texts)
