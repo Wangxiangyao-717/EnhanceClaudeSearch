@@ -136,6 +136,7 @@ def extract_session_info(jsonl_path):
         "uuid": os.path.basename(jsonl_path).replace(".jsonl", ""),
         "first_prompt": "",
         "ai_title": "",
+        "custom_title": "",
         "search_text": "",
         "mtime": os.path.getmtime(jsonl_path),
         "date_str": "",
@@ -156,6 +157,9 @@ def extract_session_info(jsonl_path):
                     continue
                 if d.get("type") == "ai-title":
                     info["ai_title"] = d.get("aiTitle", "") or ""
+                    continue
+                if d.get("type") == "custom-title":
+                    info["custom_title"] = d.get("customTitle", "") or ""
                     continue
                 if d.get("type") != "user":
                     continue
@@ -178,9 +182,11 @@ def extract_session_info(jsonl_path):
                         info["first_prompt"] = clean
                         first_found = True
         info["search_text"] = " ".join(all_texts)
-        # Include ai_title in search_text for searchability
+        # Include titles in search_text for searchability
         if info["ai_title"]:
             info["search_text"] = info["ai_title"] + " " + info["search_text"]
+        if info["custom_title"]:
+            info["search_text"] = info["custom_title"] + " " + info["search_text"]
     except Exception:
         pass
 
